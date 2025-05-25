@@ -3,16 +3,16 @@ Gemini Vision API를 활용한 AI 기반 가위바위보 게임 (달인과 대�
 
 ---
 
-## 📌 Functional Description (기능 설명)
+## Functional Description (기능 설명)
 
-🎮 **Play a rock-paper-scissors game with an AI "master" using your webcam**  
-👉 웹캠으로 손 모양(가위/바위/보)을 인식해서 AI '달인'과 가위바위보를 할 수 있습니다.
+**Play a rock-paper-scissors game with an AI "master" using your webcam**  
+-> 웹캠으로 손 모양(가위/바위/보)을 인식해서 AI '달인'과 가위바위보를 할 수 있습니다.
 
-🧠 **Hand gesture recognition with Gemini Vision API**  
-👉 Google Gemini Vision API를 이용해 당신의 손 제스처를 인식합니다.
+**Hand gesture recognition with Gemini Vision API**  
+-> Google Gemini Vision API를 이용해 당신의 손 제스처를 인식합니다.
 
-📊 **Statistics and visual pattern analysis**  
-👉 승부 결과와 선택 패턴을 저장하고 시각적인 차트로 보여줍니다.
+**Statistics and visual pattern analysis**  
+-> 승부 결과와 선택 패턴을 저장하고 시각적인 차트로 보여줍니다.
 ---
 
 ## How to Use (사용법)
@@ -53,15 +53,15 @@ requirements.txt     # 필요한 패키지 목록
 README.md            # 설명서
 ```
 
-⚠️ Warning & Tips (주의 및 팁)
-❌ Never commit your real API key!
-❌ 실제 API 키는 절대 커밋하지 마세요!
+⚠Warning & Tips (주의 및 팁)
+Never commit your real API key!
+실제 API 키는 절대 커밋하지 마세요!
 
-✅ .gitignore should include .env
-✅ .env 파일은 반드시 .gitignore에 포함되어야 합니다.
+.gitignore should include .env
+.env 파일은 반드시 .gitignore에 포함되어야 합니다.
 
-🔁 If you accidentally expose your API key, revoke and regenerate it immediately.
-🔁 실수로 노출했다면 즉시 폐기하고 새 키를 발급받으세요.
+If you accidentally expose your API key, revoke and regenerate it immediately.
+실수로 노출했다면 즉시 폐기하고 새 키를 발급받으세요.
 
 ---
 
