@@ -1,0 +1,6 @@
+python-dotenv
+gradio
+google-generativeai
+matplotlib
+numpy
+Pillow
