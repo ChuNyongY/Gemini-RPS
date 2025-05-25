@@ -1,0 +1,223 @@
+import google.generativeai as genai
+import gradio as gr
+import random
+import logging
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
+import io
+import base64
+import os
+from dotenv import load_dotenv
+
+logging.getLogger("tornado.access").setLevel(logging.ERROR)
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("환경변수 GEMINI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인하세요.")
+
+genai.configure(api_key=GEMINI_API_KEY)
+vision_model = genai.GenerativeModel("gemini-1.5-flash")
+
+game_stats = {
+    "user_wins": 0, "ai_wins": 0, "draws": 0,
+    "user_choices": {"가위": 0, "바위": 0, "보": 0},
+    "ai_choices": {"가위": 0, "바위": 0, "보": 0},
+    "total_games": 0
+}
+
+def analyze_hand_gesture(image):
+    if image is None:
+        return "인식불가"
+    try:
+        image = image.resize((128, 128)).convert("RGB")
+        prompt = "Hand gesture: scissors(✌️), rock(✊), or paper(✋)? Answer only: 가위, 바위, 보, or 인식불가"
+        response = vision_model.generate_content(
+            [prompt, image],
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.0, max_output_tokens=5, candidate_count=1
+            )
+        )
+        result = response.text.strip()
+        for choice in ["가위", "바위", "보"]:
+            if choice in result:
+                return choice
+        return "인식불가"
+    except Exception as e:
+        print(f"Gemini 분석 오류: {e}")
+        return "오류"
+
+def determine_winner(user_choice, ai_choice):
+    if user_choice == ai_choice:
+        return "무승부"
+    win_cases = {("가위", "보"), ("바위", "가위"), ("보", "바위")}
+    return "너의 승리!" if (user_choice, ai_choice) in win_cases else "달인 승리!"
+
+def get_ai_comment(result):
+    comments = {
+        "달인 승리!": ["하하! 이겼군! 더 실력을 쌓거라", "예상했다! 너무 뻔했어", "쉬운 상대였군! 다음엔 더 신중하게"],
+        "너의 승리!": ["오, 이번엔 졌군. 다음엔 이기겠다!", "운이 좋았을 뿐이야!", "좋아, 실력이 좀 늘었군?"],
+        "무승부": ["오호~ 막상막하군!", "무승부라니, 다음엔 이겨주마!", "좋은 승부였어. 다시 해보자!"]
+    }
+    return random.choice(comments[result])
+
+def update_stats(user_choice, ai_choice, result):
+    game_stats["total_games"] += 1
+    game_stats["user_choices"][user_choice] += 1
+    game_stats["ai_choices"][ai_choice] += 1
+    if result == "너의 승리!":
+        game_stats["user_wins"] += 1
+    elif result == "달인 승리!":
+        game_stats["ai_wins"] += 1
+    else:
+        game_stats["draws"] += 1
+
+def create_stats_chart():
+    total = game_stats["total_games"]
+    if total == 0:
+        return "<div style='text-align: center; padding: 20px;'>아직 게임을 시작하지 않았습니다.</div>"
+
+    mpl.rc('font', family='NanumGothic')
+    mpl.rcParams['axes.unicode_minus'] = False
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+    win_data = [game_stats["user_wins"], game_stats["ai_wins"], game_stats["draws"]]
+    win_labels = ['너의 승리', '달인 승리', '무승부']
+    choice_labels = ['가위', '바위', '보']
+    user_data = list(game_stats["user_choices"].values())
+    ai_data = list(game_stats["ai_choices"].values())
+
+    axes[0, 0].pie(user_data, labels=choice_labels, autopct='%1.1f%%', startangle=90)
+    axes[0, 0].set_title('너의 패턴', fontweight='bold')
+
+    axes[0, 1].pie(ai_data, labels=choice_labels, autopct='%1.1f%%', startangle=90)
+    axes[0, 1].set_title("달인 패턴", fontweight='bold')
+
+    bars = axes[1, 0].bar(win_labels, win_data, alpha=0.85)
+    axes[1, 0].set_title('승리 횟수', fontweight='bold')
+    axes[1, 0].set_ylabel('횟수')
+    for bar, value in zip(bars, win_data):
+        if value > 0:
+            axes[1, 0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                            str(value), ha='center', va='bottom', fontweight='bold')
+
+    x = np.arange(len(choice_labels))
+    width = 0.35
+    axes[1, 1].bar(x - width/2, user_data, width, label='너', alpha=0.85)
+    axes[1, 1].bar(x + width/2, ai_data, width, label='달인', alpha=0.85)
+    axes[1, 1].set_title('선택 비교', fontweight='bold')
+    axes[1, 1].set_xticks(x)
+    axes[1, 1].set_xticklabels(choice_labels)
+    axes[1, 1].legend()
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png', dpi=90, bbox_inches='tight')
+    buffer.seek(0)
+    image_base64 = base64.b64encode(buffer.read()).decode()
+    plt.close()
+
+    return f'<div style="text-align: center;"><img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;"/></div>'
+
+def get_stats_display():
+    total = game_stats["total_games"]
+    if total == 0:
+        return "아직 게임을 시작하지 않았습니다."
+
+    stats_text = f"""총 {total}게임
+
+승부 결과
+• 너의 승리: {game_stats["user_wins"]}회 ({(game_stats["user_wins"]/total)*100:.1f}%)
+• 달인 승리: {game_stats["ai_wins"]}회 ({(game_stats["ai_wins"]/total)*100:.1f}%)
+• 무승부: {game_stats["draws"]}회 ({(game_stats["draws"]/total)*100:.1f}%)
+
+너의 선택 패턴"""
+    for choice in ["가위", "바위", "보"]:
+        count = game_stats["user_choices"][choice]
+        percentage = (count/total)*100
+        stats_text += f"\n• {choice}: {count}회 ({percentage:.1f}%)"
+
+    stats_text += "\n\n달인의 선택 패턴"
+    for choice in ["가위", "바위", "보"]:
+        count = game_stats["ai_choices"][choice]
+        percentage = (count/total)*100
+        stats_text += f"\n• {choice}: {count}회 ({percentage:.1f}%)"
+
+    return stats_text
+
+def reset_stats():
+    global game_stats
+    game_stats = {
+        "user_wins": 0, "ai_wins": 0, "draws": 0,
+        "user_choices": {"가위": 0, "바위": 0, "보": 0},
+        "ai_choices": {"가위": 0, "바위": 0, "보": 0},
+        "total_games": 0
+    }
+    return get_stats_display(), create_stats_chart()
+
+def play_game(image):
+    if image is None:
+        return "", "웹캠으로 사진을 찍어주세요!", "결과가 여기에 표시됩니다.", "", get_stats_display(), create_stats_chart()
+
+    user_choice = analyze_hand_gesture(image)
+    if user_choice not in ["가위", "바위", "보"]:
+        return "", f"손 제스처 인식 실패: {user_choice}", "다시 시도해주세요!", "", get_stats_display(), create_stats_chart()
+
+    ai_choice = random.choice(["가위", "바위", "보"])
+    result = determine_winner(user_choice, ai_choice)
+    comment = get_ai_comment(result)
+    update_stats(user_choice, ai_choice, result)
+
+    ai_emoji = {"가위": "✌️", "바위": "✊", "보": "✋"}[ai_choice]
+    ai_image_html = f'<div style="font-size: 120px; text-align: center; padding: 20px;">{ai_emoji}</div>'
+    game_result = f"{result}\n{'너의 패배!' if result == '달인 승리!' else '달인 패배!' if result == '너의 승리!' else ''}"
+
+    return ai_image_html, game_result, comment, user_choice, get_stats_display(), create_stats_chart()
+
+with gr.Blocks(title="가위바위보 달인과 하는 가위바위보") as demo:
+    gr.Markdown("# 가위바위보 달인과 하는 가위바위보")
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("### 웹캠 인식")
+            camera = gr.Image(label="손 모양을 웹캠으로 촬영해주세요!", type="pil", sources=["webcam"])
+            with gr.Row():
+                play_btn = gr.Button("가위바위보 시작!", variant="primary", size="lg")
+                reset_btn = gr.Button("통계 초기화", variant="secondary")
+            user_gesture_text = gr.Textbox(label="인식된 제스처", interactive=False)
+
+        with gr.Column(scale=1):
+            gr.Markdown("### 달인의 선택")
+            ai_gesture_display = gr.HTML(value="", label="AI의 선택")
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            game_result = gr.Textbox(label="가위바위보 결과", interactive=False, lines=4)
+        with gr.Column(scale=1):
+            ai_comment = gr.Textbox(label="달인의 말", interactive=False, lines=3)
+
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("### 게임 통계")
+            stats_display = gr.Textbox(label="", interactive=False, lines=15, value=get_stats_display())
+        with gr.Column(scale=1):
+            gr.Markdown("### 통계 차트")
+            stats_chart = gr.HTML(label="", value=create_stats_chart())
+
+    play_btn.click(
+        fn=play_game,
+        inputs=[camera],
+        outputs=[ai_gesture_display, game_result, ai_comment, user_gesture_text, stats_display, stats_chart]
+    )
+
+    reset_btn.click(
+        fn=reset_stats,
+        inputs=[],
+        outputs=[stats_display, stats_chart]
+    )
+
+if __name__ == "__main__":
+    demo.launch(share=True, debug=False)
