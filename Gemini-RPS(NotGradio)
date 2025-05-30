@@ -1,0 +1,146 @@
+from google.colab import output
+from IPython.display import display, Javascript
+from base64 import b64decode
+from PIL import Image
+import io
+import logging
+import google.generativeai as genai
+import random
+
+logging.getLogger("tornado.access").setLevel(logging.ERROR)
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("환경변수 GEMINI_API_KEY가 설정되어 있지 않습니다. .env 파일을 확인하세요.")
+
+genai.configure(api_key=GEMINI_API_KEY)
+vision_model = genai.GenerativeModel("gemini-1.5-flash")
+
+def take_photo(filename='photo.jpg', quality=0.8):
+    js = Javascript('''
+      async function takePhoto(quality) {
+        const div = document.createElement('div');
+        const capture = document.createElement('button');
+        capture.textContent = '사진 찍기';
+        capture.style.fontSize = '20px';
+        capture.style.margin = '10px';
+        div.appendChild(capture);
+
+        const video = document.createElement('video');
+        video.style.display = 'block';
+        video.style.width = '480px';
+        video.style.marginBottom = '10px';
+        const stream = await navigator.mediaDevices.getUserMedia({video: true});
+
+        document.body.appendChild(div);
+        div.appendChild(video);
+        video.srcObject = stream;
+        await video.play();
+
+        google.colab.output.setIframeHeight(document.documentElement.scrollHeight, true);
+
+        await new Promise((resolve) => capture.onclick = resolve);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        stream.getVideoTracks()[0].stop();
+        div.remove();
+        return canvas.toDataURL('image/jpeg', quality);}''')
+    
+    display(js)
+    data = output.eval_js('takePhoto({})'.format(quality))
+    if data:
+        _, encoded = data.split(",", 1)
+        with open(filename, "wb") as f:
+            f.write(b64decode(encoded))
+        return data
+    else:
+        return None
+
+def analyze_hand_gesture(image_data):
+
+    try:
+        image_data = image_data.split(',')[1]
+        image_bytes = b64decode(image_data)
+        pil_image = Image.open(io.BytesIO(image_bytes))
+
+        prompt = """
+        이 이미지에서 손의 모양을 보고 가위바위보 중 무엇인지 판단해주세요.
+        - 가위: 두 손가락(검지, 중지)만 펴진 상태
+        - 바위: 주먹을 쥔 상태
+        - 보: 손바닥을 펼친 상태
+
+        답변은 반드시 "가위", "바위", "보" 중 하나만 답해주세요.
+        손이 보이지 않으면 "인식불가"라고 답해주세요.
+        """
+
+        response = vision_model.generate_content([prompt, pil_image])
+        result = response.text.strip()
+
+        if "가위" in result:
+            return "가위"
+        elif "바위" in result:
+            return "바위"
+        elif "보" in result:
+            return "보"
+        else:
+            return "인식불가"
+    except Exception as e:
+        print(f"Gemini 분석 오류: {e}")
+        return "오류"
+
+def get_ai_choice():
+    return random.choice(["가위", "바위", "보"])
+
+def determine_winner(user_choice, ai_choice):
+    if user_choice == ai_choice:
+        return "무승부"
+    elif (user_choice == "가위" and ai_choice == "보") or \
+         (user_choice == "바위" and ai_choice == "가위") or \
+         (user_choice == "보" and ai_choice == "바위"):
+        return "너의 승리"
+    else:
+        return "달인 승리"
+
+def play_rock_paper_scissors():
+    print("가위바위보 달인과 함께 하는 가위바위보!")
+    print("=" * 50)
+
+    while True:
+        print("\n가위바위보 손 모양을 만들고 '사진 찍기' 버튼을 눌러주세요! (가위, 바위, 보)")
+        image_data = take_photo()
+
+        if image_data is None:
+            print("웹캠 사용 중 오류 발생 또는 취소됨")
+            break
+
+        print("달인 가위바위보 뭐낼지 생각 중...")
+
+        user_choice = analyze_hand_gesture(image_data)
+        if user_choice not in ["가위", "바위", "보"]:
+            print("손 인식 실패 또는 오류")
+            break
+
+        print(f"너: {user_choice}")
+
+        ai_choice = get_ai_choice()
+        print(f"달인: {ai_choice}")
+
+        result = determine_winner(user_choice, ai_choice)
+        print(f"결과: {result}")
+
+        print("=" * 50)
+
+        continue_game = input("\n계속 하시겠습니까? (y/n): ").lower()
+        if continue_game != 'y':
+            break
+
+    print("게임이 종료되었습니다.")
+
+def start_game():
+    play_rock_paper_scissors()
+
+start_game()
